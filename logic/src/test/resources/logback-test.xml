@@ -1,0 +1,50 @@
+<configuration debug="false">
+
+    <!-- A shutdown hook to properly finalize the logger system.
+    In order to avoid race conditions between shutdown hooks
+    (logs from another one won't be printed) there is a delay of
+    1 seconds that allows other hooks to write logs. This will
+    cause the process shutdown to be delayed with 1 second. -->
+    <shutdownHook class="ch.qos.logback.core.hook.DelayingShutdownHook">
+        <delay>1000</delay>
+    </shutdownHook>
+
+    <appender name="FILE" class="ch.qos.logback.core.FileAppender">
+        <file>${application.home:-.}/target/test-logs/application.log</file>
+        <append>false</append>
+        <encoder>
+            <pattern>[%date{ISO8601}] [%-5level] [%-36.36logger{36}|%-44.44(%thread)] - %msg%n</pattern>
+        </encoder>
+        <immediateFlush>true</immediateFlush>
+    </appender>
+
+    <appender name="ASYNC_FILE" class="ch.qos.logback.classic.AsyncAppender">
+        <appender-ref ref="FILE" />
+        <maxFlushTime>0</maxFlushTime>
+        <discardingThreshold>0</discardingThreshold>
+    </appender>
+
+    <appender name="AKKA_FILE" class="ch.qos.logback.core.FileAppender">
+        <file>${application.home:-.}/target/test-logs/akka.log</file>
+        <append>false</append>
+        <encoder>
+            <pattern>[%date{ISO8601}] [%-5level] [%thread %X{sourceThread}] %logger{36} %X{sourceActorSystem} %X{akkaSource} - %msg%n</pattern>
+        </encoder>
+        <immediateFlush>true</immediateFlush>
+    </appender>
+
+    <appender name="ASYNC_AKKA_FILE" class="ch.qos.logback.classic.AsyncAppender">
+        <appender-ref ref="AKKA_FILE" />
+        <maxFlushTime>0</maxFlushTime>
+        <discardingThreshold>0</discardingThreshold>
+    </appender>
+
+    <logger name="akka" additivity="false">
+        <appender-ref ref="ASYNC_AKKA_FILE" />
+    </logger>
+
+    <root level="DEBUG">
+        <appender-ref ref="ASYNC_FILE"/>
+    </root>
+
+</configuration>
