@@ -10,28 +10,30 @@ import zio._
 
 import scala.util.{Failure, Success, Try}
 
-object Info {
-
+trait Info {
   val build: BuildEndpoint => ZServerEndpoint[Any, Any] =
-    _.serverLogicPure[Task](_ => Right.apply(buildInfoJson))
+    _.serverLogicPure[Task](_ => Right(buildInfoJson))
 
-  val zioConfig: URIO[Config, Config] = ZIO.environmentWithZIO[Config] { env =>
-    ZIO.succeed(env.get)
-  }
+  def allConfig: AllConfigEndpoint => ZServerEndpoint[Any, Any]
 
-  val allConfig: AllConfigEndpoint => ZServerEndpoint[Config, Any] =
-    allConfigEndpoint => allConfigEndpoint.serverLogicSuccess[URIO[Config, _]](_ => zioConfig)
+  def config: ConfigEndpoint => ZServerEndpoint[Any, Any]
+}
 
-  def config: ConfigEndpoint => ZServerEndpoint[Any, Any] =
-    configEndpoint => configEndpoint.serverLogic[URIO[Config, _]]{ path =>
-      zioConfig.map { conf =>
+case class InfoImpl(conf: Config) extends Info {
+  override val allConfig: AllConfigEndpoint => ZServerEndpoint[Any, Any] =
+    _.serverLogicPure[Task](_ => Right(conf))
+
+  override val config: ConfigEndpoint => ZServerEndpoint[Any, Any] =
+    _.serverLogicPure[Task] { path =>
         Try(conf.getConfig(path)) match {
-          case Success(c) => Right(c.atPath(path))
-          case Failure(e: CEx.Missing) => Left(NotFound(s"'$path' is missing: ${e.getMessage}"))
+          case Success(c)                => Right(c.atPath(path))
+          case Failure(e: CEx.Missing)   => Left(NotFound(s"'$path' is missing: ${e.getMessage}"))
           case Failure(e: CEx.WrongType) => Left(ExpectationFailed(s"'$path' is of wrong type: ${e.getMessage}"))
-          case Failure(unknown) => Left(GeneralError(ExceptionUtils.getStackTrace(unknown), 500))
+          case Failure(unknown)          => Left(GeneralError(ExceptionUtils.getStackTrace(unknown), 500))
         }
-      }
     }
-
+}
+object InfoImpl {
+  val live: URLayer[Config, InfoImpl] =
+    ZLayer(ZIO.service[Config].map(InfoImpl.apply))
 }

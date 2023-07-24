@@ -10,16 +10,19 @@ import sttp.tapir.ztapir.ZServerEndpoint
 import zio._
 
 object Routes {
-
   val prometheusMetrics: PrometheusMetrics[Task] = PrometheusMetrics.default[Task]()
-  val metricsEndpoint: ZServerEndpoint[Any, Any] = prometheusMetrics.metricsEndpoint
 
-  def all: List[ZServerEndpoint[_, Any]] = {
-    val EvaluatedAPI(endpoints, openAPI) = EvalEndpoints.evalAll(Info.build, Info.allConfig, Info.config, Code.foo)
-    val apiEndpoints: List[ZServerEndpoint[Any, Any]] = endpoints.map(_._2)
-    val docsAsYaml: String = openAPI.toYaml
-    val uiOptions: SwaggerUIOptions = SwaggerUIOptions.default.copy(pathPrefix = List("docs"))
-    val swaggerUIEndPs = SwaggerUI[Task](docsAsYaml, uiOptions)
-    apiEndpoints ++ swaggerUIEndPs ++ List(metricsEndpoint)
+  val live: URLayer[Info, List[ZServerEndpoint[Any, Any]]] = ZLayer {
+    for {
+      info <- ZIO.service[Info]
+    } yield {
+      val metricsEndpoint: ZServerEndpoint[Any, Any] = prometheusMetrics.metricsEndpoint
+      val EvaluatedAPI(endpoints, openAPI) = EvalEndpoints.evalAll(info.build, info.allConfig, info.config, Code.foo)
+      val apiEndpoints: List[ZServerEndpoint[Any, Any]] = endpoints.map(_._2)
+      val docsAsYaml: String = openAPI.toYaml
+      val uiOptions: SwaggerUIOptions = SwaggerUIOptions.default.copy(pathPrefix = List("docs"))
+      val swaggerUIEndPs = SwaggerUI[Task](docsAsYaml, uiOptions)
+      apiEndpoints ++ swaggerUIEndPs ++ List(metricsEndpoint)
+    }
   }
 }
