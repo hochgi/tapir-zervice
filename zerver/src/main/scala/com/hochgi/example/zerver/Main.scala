@@ -13,29 +13,39 @@ import zio.config.typesafe.TypesafeConfigProvider
 object Main extends ZIOAppDefault {
 
 
-  object Services {
-    val tsconfigZIO:  UIO[TSConfig]    = ZIO.succeed(ConfigFactory.load())
-    val tsconfigLive: ULayer[TSConfig] = ZLayer(tsconfigZIO)
-    val configProviderLive: ULayer[ConfigProvider] = {
-      val tmp: URLayer[TSConfig, ConfigProvider] = ZLayer(ZIO.service[TSConfig].map(TypesafeConfigProvider.fromTypesafeConfig(_)))
-      tsconfigLive >>> tmp
-    }
-    val serverConfigProviderLive: ZLayer[Any, Nothing, Unit] = for {
-      cp <- configProviderLive
-      sc <- zio.Runtime.setConfigProvider(cp.get)
-    } yield sc
-  }
-
   override val bootstrap: ZLayer[ZIOAppArgs, Any, Any] =
     SLF4J.slf4j(LogFormat.default)
+
+  object Services {
+    // A layer with all of HOCON config object
+    val tsconfigLive: ULayer[TSConfig] = ZLayer(ZIO.succeed(ConfigFactory.load()))
+
+    // Given a config object, extract the part that is relevant for zio-http server
+    val serverTSConfigLive: ULayer[TSConfig] = {
+      val tmp: URLayer[TSConfig, TSConfig] = ZLayer(ZIO.service[TSConfig].map(_.getConfig("hochgi.example.zerver")))
+      tsconfigLive >>> tmp
+    }
+
+    // given a relevant (as in rooted properly) ts config, supply a ConfigProvider
+    val configProviderLive: ULayer[ConfigProvider] = {
+      val tmp: URLayer[TSConfig, ConfigProvider] = ZLayer(ZIO.service[TSConfig].map(TypesafeConfigProvider.fromTypesafeConfig(_)))
+      serverTSConfigLive >>> tmp
+    }
+
+    // use ZIO.config to supply a HOCON configured Server.Config for zio-http
+    val serverConfigLive: ULayer[Server.Config] = ZLayer(ZIO.config[Server.Config](Server.Config.config).catchAll { configErr =>
+      for {
+        _ <- ZIO.log("Bad configuration (Falling back to ZIO defaults): " + configErr.getMessage())
+        verify = println("does it really log?")
+      } yield Server.Config.default
+    })
+  }
 
   override def run: ZIO[Any with ZIOAppArgs with Scope, Any, Any] = {
     val serverOptions: ZioHttpServerOptions[Any] =
       ZioHttpServerOptions.customiseInterceptors
         .metricsInterceptor(Routes.prometheusMetrics.metricsInterceptor())
         .options
-
-    val port = sys.env.get("HTTP_PORT").flatMap(_.toIntOption).getOrElse(8080)
 
     (
       for {
@@ -45,9 +55,9 @@ object Main extends ZIOAppDefault {
         _ <- Console.readLine
       } yield ()
     ).provide(
-      Server.defaultWithPort(port),
+      Services.serverConfigLive,
       Services.tsconfigLive,
-      Services.serverConfigProviderLive,
+      Server.live,
       InfoImpl.live,
       Routes.live
     ).exitCode
