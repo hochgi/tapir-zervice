@@ -13,8 +13,8 @@ import zio.config.typesafe.TypesafeConfigProvider
 object Main extends ZIOAppDefault {
 
 
-  override val bootstrap: ZLayer[ZIOAppArgs, Any, Any] =
-    SLF4J.slf4j(LogFormat.default)
+  override val bootstrap: ZLayer[Any, Nothing, Unit with ConfigProvider] =
+    SLF4J.slf4j(LogFormat.default) ++ Services.configProviderLive
 
   object Services {
     // A layer with all of HOCON config object
@@ -32,13 +32,25 @@ object Main extends ZIOAppDefault {
       serverTSConfigLive >>> tmp
     }
 
-    // use ZIO.config to supply a HOCON configured Server.Config for zio-http
-    val serverConfigLive: ULayer[Server.Config] = ZLayer(ZIO.config[Server.Config](Server.Config.config).catchAll { configErr =>
-      for {
-        _ <- ZIO.log("Bad configuration (Falling back to ZIO defaults): " + configErr.getMessage())
-        verify = println("does it really log?")
-      } yield Server.Config.default
-    })
+//    // use ZIO.config to supply a HOCON configured Server.Config for zio-http
+    val serverConfigLive: ULayer[Server.Config] = ZLayer {
+      ZIO
+        .configProviderWith[ConfigProvider, Nothing, Server.Config] { defaultConfigProvider =>
+          ZIO.service[ConfigProvider]
+            .flatMap(_.load(Server.Config.config))
+            .catchAll { configErr =>
+              val tsFailedTryWithConfigProvider = for {
+                ce <- defaultConfigProvider.load(Server.Config.config)
+                _ <- ZIO.log("Bad configuration (Falling back to default ConfigProvider): " + configErr.getMessage())
+              } yield ce
+
+              tsFailedTryWithConfigProvider.catchAll(defaultConfigErr => for {
+                _ <- ZIO.log("Bad configuration from default ConfigProvider (Falling back to ZIO defaults): " + defaultConfigErr.getMessage())
+              } yield Server.Config.default)
+            }
+        }
+        .provide(configProviderLive)
+    }
   }
 
   override def run: ZIO[Any with ZIOAppArgs with Scope, Any, Any] = {
