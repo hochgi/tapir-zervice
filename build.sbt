@@ -44,6 +44,7 @@ val sharedSettings = {
       (original :+ (sharedSourceDir / crossDir)).distinct
     },
     publish / skip := true,
+    run / fork := true,
     versionScheme := Some("semver-spec"),
     copyStrykerToRoot := {
       val basedir: File = baseDirectory.value
@@ -78,19 +79,28 @@ lazy val endpoints = (project in file("endpoints"))
     publish / skip := false,
     libraryDependencies ++= Seq(
       tapirCore,
-      tapirJsonCirce,
-      circeCore,
-      circeGeneric,
+      tapirZio,
+      tapirJsonZio,
       tsConfig
     )
   )
 
 lazy val logic = (project in file("logic"))
+  .enablePlugins(ZioSbtEcosystemPlugin)
   .dependsOn(datatypes)
   .settings(
+    stdSettings(
+      javaPlatform = "11",
+      enableKindProjector = true)
+    ,
     sharedSettings,
     name := "logic",
     libraryDependencies ++= Seq(
+      zio,
+      zioStreams,
+      zioJson,
+      zioProcess,
+      commonsIO,
       logbackCore,
       logbackClassic % Test
     )
@@ -171,15 +181,18 @@ lazy val server = (project in file("server"))
   )
 
 lazy val zerver = (project in file("zerver"))
-  .enablePlugins(JavaAppPackaging)
+  .enablePlugins(ZioSbtEcosystemPlugin, JavaAppPackaging)
   .dependsOn(logic, matapi)
   .settings(
+    stdSettings(
+      javaPlatform = "11",
+      enableKindProjector = true)
+    ,
     sharedSettings,
     name := "zerver",
     libraryDependencies ++= Seq(
       tapirZioHttpServer,
       tapirPrometheusMetrics,
-      tapirJsonZio,
       logbackClassic,
       zioLogSlf4j,
       zioConfig,
@@ -189,8 +202,7 @@ lazy val zerver = (project in file("zerver"))
       metricsJVM,
       tapirCore,
       tapirSwaggerUi,
-      tapirOpenapiDocs,
-      "org.apache.arrow" % "flight-sql-jdbc-driver" % "12.0.1"
+      tapirOpenapiDocs
     ),
     Universal / mappings ++= {
       val resources = (Compile / resourceDirectory).value
@@ -229,6 +241,7 @@ val projName  = Space ~> projBare
 lazy val root = (project in file("."))
   .aggregate(datatypes, endpoints, matapi, logic, server)
   .settings(
+    ThisBuild / name := "tapir-zervice",
     // opt out of aggregation of tasks we need to wire only in root
     baseDirectory / aggregate := false,
     // crossScalaVersions must be set to Nil on the aggregating project

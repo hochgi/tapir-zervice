@@ -25,15 +25,17 @@ object EvalEndpoints {
    * Forcing all places to use the same shared method ensures
    * build & runtime swagger definitions stays consistent.
    */
-  def evalAll[T](evalBuild:     ep.Info.BuildEndpoint            => T,
-                 evalAllConfig: ep.Info.AllConfigEndpoint        => T,
-                 evalConfig:    ep.Info.ConfigEndpoint           => T,
-                 evalCodeFoo:   ep.Code.FooEndpoint              => T): EvaluatedAPI[T] = {
+  def evalAll[T](evalBuild:     ep.Info.BuildEndpoint                  => T,
+                 evalAllConfig: ep.Info.AllConfigEndpoint              => T,
+                 evalConfig:    ep.Info.ConfigEndpoint                 => T,
+                 evalCodeFoo:   ep.Code.FooEndpoint                    => T,
+                 evalCodeJWC:   ep.Code.WordCountSlidingWindowEndpoint => T): EvaluatedAPI[T] = {
     val endpoints = List(
       pairInput(evalBuild)(ep.Info.build),
       pairInput(evalAllConfig)(ep.Info.allConfig),
       pairInput(evalConfig)(ep.Info.config),
-      pairInput(evalCodeFoo)(ep.Code.foo))
+      pairInput(evalCodeFoo)(ep.Code.foo),
+      pairInput(evalCodeJWC)(ep.Code.jsonWordCountSlidingWindow))
 
     val openApiDocs: OpenAPI = OpenAPIDocsInterpreter().toOpenAPI(
       es      = endpoints.map(_._1),

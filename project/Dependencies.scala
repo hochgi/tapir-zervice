@@ -17,6 +17,7 @@ object Dependencies {
   val zio               = "dev.zio" %% "zio"                 % zioVersion
   val zioStreams        = "dev.zio" %% "zio-streams"         % zioVersion
   val zioJson           = "dev.zio" %% "zio-json"            % "0.6.0"
+  val zioProcess        = "dev.zio" %% "zio-process"         % "0.7.2"
   val zioLogging        = "dev.zio" %% "zio-logging"         % zioLoggingVersion
   val zioLogSlf4j       = "dev.zio" %% "zio-logging-slf4j"   % zioLoggingVersion
   val zioConfig         = "dev.zio" %% "zio-config"          % zioConfigVersion
@@ -33,6 +34,7 @@ object Dependencies {
 
   // tapir
   val tapirCore              = "com.softwaremill.sttp.tapir"   %% "tapir-core"               % tapirVersion  
+  val tapirZio               = "com.softwaremill.sttp.tapir"   %% "tapir-zio"                % tapirVersion
   val tapirZioHttpServer     = "com.softwaremill.sttp.tapir"   %% "tapir-zio-http-server"    % tapirVersion
   val tapirAkkaHttpServer    = "com.softwaremill.sttp.tapir"   %% "tapir-akka-http-server"   % tapirVersion
   val tapirSwaggerUi         = "com.softwaremill.sttp.tapir"   %% "tapir-swagger-ui"         % tapirVersion
@@ -59,6 +61,7 @@ object Dependencies {
   // util
   val tsConfig     = "com.typesafe"       % "config"         % "1.4.2"
   val commonsLang3 = "org.apache.commons" % "commons-lang3"  % "3.12.0"
+  val commonsIO    = "commons-io"         % "commons-io"     % "2.13.0"
   val jctools      = "org.jctools"        % "jctools-core"   % "4.0.1"
   val mime4j       = "org.apache.james"   % "apache-mime4j"  % "0.8.9"
   val scopt        = "com.github.scopt"  %% "scopt"          % "4.1.0"

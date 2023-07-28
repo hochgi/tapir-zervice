@@ -47,7 +47,8 @@ object GenerateOpenAPI extends App {
           evalBuild     = _ => (),
           evalAllConfig = _ => (),
           evalConfig    = _ => (),
-          evalCodeFoo   = _ => ())
+          evalCodeFoo   = _ => (),
+          evalCodeJWC   = _ => ())
       val yamlStr = arguments.stringStyle.fold(openApiDocs.toYaml)(openApiDocs.toYaml)
       Files.write(arguments.file, yamlStr.getBytes(StandardCharsets.UTF_8))
   }
