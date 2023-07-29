@@ -10,8 +10,7 @@ import zio.stm.TRef
 import zio.process._
 import zio.json._
 import ast._
-import zio.stream.{ZPipeline, ZStream}
-
+import zio.stream._
 import scala.collection.immutable.Queue
 
 object JsonProcess {
@@ -69,8 +68,6 @@ object JsonProcess {
 }
 final case class JsonProcess private(config: JsonProcess.Config, executable: File, tRef: TRef[WordCountState]) {
 
-  private val zp = ZPipeline.fromChannel(ZPipeline.utf8Decode.channel.mapError(CommandError.IOError.apply))
-
   def getJsonStream: ZIO[Any, CommandError, TRef[WordCountState]] = {
     for {
       p <- Command(executable.getAbsolutePath).run
@@ -81,26 +78,30 @@ final case class JsonProcess private(config: JsonProcess.Config, executable: Fil
   private def getEither(jo: Json.Obj, field: String): Either[String, Json] =
     jo.get(field).toRight(s"No such field '$field'")
 
+  private def unfailingWordsStream(ps: ProcessStream): ZStream[Any, Nothing, Event] =
+    ps.stream
+      .via(ZPipeline.fromChannel(ZPipeline.utf8Decode.channel.mapError(CommandError.IOError.apply)))
+      .either
+      .collect { case Right(s) => s } // ignore decoding failures
+      .via(ZPipeline.splitLines)
+      .map(_.fromJson[Json.Obj].flatMap { obj: Json.Obj =>
+        for {
+          jf <- getEither(obj, "event_type")
+          sf <- jf.as[String]
+          jw <- getEither(obj, "data")
+          sw <- jw.as[String]
+          jt <- getEither(obj, "timestamp")
+          lt <- jt.as[Long]
+        } yield WordEvent(sf, sw, lt)
+      })
+      .collect[Event] { case Right(we) => we } // ignore parsing failures
+
   private def processSdtoutStream(ps: ProcessStream): ZIO[Any, CommandError, Unit] = {
     val ticks = ZStream
       .tick(config.updateTick)
       .mapZIO[Any, Nothing, Event](_ => Clock.currentTime(SECONDS).map(Tick.apply))
 
-    val words =
-      ps.linesStream
-        .map(_.fromJson[Json.Obj].flatMap { obj: Json.Obj =>
-          for {
-            jf <- getEither(obj, "event_type")
-            sf <- jf.as[String]
-            jw <- getEither(obj, "data")
-            sw <- jw.as[String]
-            jt <- getEither(obj, "timestamp")
-            lt <- jt.as[Long]
-          } yield WordEvent(sf, sw, lt)
-        })
-        .collect[Event] { case Right(we) => we } // ignore parsing failures. collect only successful writes
-
-    words
+    unfailingWordsStream(ps)
       .merge(ticks)
       .runForeach {
         case we: WordEvent => tRef.update(_.updateNew(we, we.timestamp - config.slidingWindow.toSeconds)).commit
