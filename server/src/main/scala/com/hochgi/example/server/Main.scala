@@ -10,13 +10,14 @@ import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.Route
 import com.codahale.metrics._
 import com.codahale.metrics.jvm._
+import com.hochgi.example.datatypes.GeneralError
 import com.typesafe.config.Config
 import com.typesafe.scalalogging.LazyLogging
 import fr.davit.akka.http.metrics.core.HttpMetricsSettings
 import fr.davit.akka.http.metrics.core.scaladsl.server.HttpMetricsDirectives._
 import fr.davit.akka.http.metrics.dropwizard.marshalling.DropwizardMarshallers._
 import fr.davit.akka.http.metrics.dropwizard.{DropwizardRegistry, DropwizardSettings}
-import com.hochgi.example.server.routes.{CodeRoutes, InfoRoutes, Kill}
+import com.hochgi.example.server.routes.{CodeRoutes, EvaluatedEndpoint, InfoRoutes, Kill}
 import com.hochgi.example.matapi.EvalEndpoints
 import sttp.apispec.openapi.circe.yaml._
 import sttp.tapir.server.ServerEndpoint
@@ -87,10 +88,11 @@ object Main extends App with LazyLogging {
     type SEAF = ServerEndpoint[Any, Future]
 
     val evaluatedAPI = EvalEndpoints.evalAll(
-        InfoRoutes.build,
-        InfoRoutes.allConfig(config),
-        InfoRoutes.config(config),
-        CodeRoutes.foo)
+        evalBuild     = InfoRoutes.build,
+        evalAllConfig = InfoRoutes.allConfig(config),
+        evalConfig    = InfoRoutes.config(config),
+        evalCodeFoo   = CodeRoutes.foo,
+        evalCodeJWC   = CodeRoutes.jsonWordCountSlidingWindow)
 
     val (_, serverEndpoints)        = evaluatedAPI.endpoints.unzip
     val docsAsYaml:          String = evaluatedAPI.openApiDocs.toYaml

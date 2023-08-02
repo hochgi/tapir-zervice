@@ -44,7 +44,7 @@ val sharedSettings = {
       (original :+ (sharedSourceDir / crossDir)).distinct
     },
     publish / skip := true,
-    run / fork := true,
+//    run / fork := true,
     versionScheme := Some("semver-spec"),
     copyStrykerToRoot := {
       val basedir: File = baseDirectory.value
