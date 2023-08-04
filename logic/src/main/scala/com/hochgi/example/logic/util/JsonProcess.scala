@@ -71,7 +71,7 @@ final case class JsonProcess private(config: JsonProcess.Config, executable: Fil
   def getJsonStream: ZIO[Any, CommandError, TRef[WordCountState]] = {
     for {
       p <- Command(executable.getAbsolutePath).run
-      _ <- processSdtoutStream(p.stdout)
+      _ <- processSdtoutStream(p.stdout).fork // TODO: allow interrupt fiber for graceful shutdown
     } yield tRef
   }
 
