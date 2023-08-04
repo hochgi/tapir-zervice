@@ -29,5 +29,5 @@ In the past I always used akka-http and stdlib `Future` as the effect type.
 This time, I wanted to try out the ZIO stack.
 I added another server module (called `zerver`) which tries to use ZIO instead.
 
-So far no luck. \
+So far ~~no~~ partial luck. \
 ¯\\\_(ツ)\_/¯
