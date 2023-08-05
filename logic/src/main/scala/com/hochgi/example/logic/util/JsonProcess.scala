@@ -80,6 +80,7 @@ final case class JsonProcess private(config: JsonProcess.Config, executable: Fil
 
   private def unfailingWordsStream(ps: ProcessStream): ZStream[Any, Nothing, Event] =
     ps.stream
+      .tap(b => Console.printLine(s"byte: $b")) // TODO: for some reason, this tap causes first event to flow in (stops after failure). Removing this will not show even 1st event. ¯\_(ツ)_/¯
       .via(ZPipeline.fromChannel(ZPipeline.utf8Decode.channel.mapError(CommandError.IOError.apply)))
       .either
       .collect { case Right(s) => s } // ignore decoding failures
