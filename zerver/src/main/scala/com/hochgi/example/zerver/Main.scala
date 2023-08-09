@@ -38,10 +38,14 @@ object Main extends ZIOAppDefault {
 
     (
       for {
+        jsonp      <- ZIO.service[JsonProcess]
+        fiber      <- jsonp.getJsonStream
         app        <- ZIO.serviceWith[List[ZServerEndpoint[Any, Any]]](ZioHttpInterpreter(serverOptions).toHttp(_))
         actualPort <- Server.install(app.withDefaultErrorResponse)
         _          <- Console.printLine(s"Go to http://localhost:${actualPort}/docs to open SwaggerUI. Press ENTER key to exit.")
         _          <- Console.readLine
+        _          <- fiber.interrupt
+        _          <- fiber.await
       } yield ()
     ).provide(
       Services.tsconfigLive,

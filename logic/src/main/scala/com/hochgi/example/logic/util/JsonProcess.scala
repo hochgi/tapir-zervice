@@ -9,8 +9,10 @@ import zio.{Queue => _, _}
 import zio.process._
 import zio.json._
 import ast._
+import zio.Cause.Die
 import zio.stream._
 
+import java.nio.charset.CharacterCodingException
 import scala.collection.immutable.Queue
 
 object JsonProcess {
@@ -56,9 +58,7 @@ object JsonProcess {
     )
   }
 
-  case class RefWithUpdatingFiber(ref: Ref[WordCountState], fib: Fiber[CommandError, Unit])
-
-  val live: ZLayer[Any, Throwable, RefWithUpdatingFiber] = ZLayer.scoped {
+  val live: ZLayer[Any, Throwable, JsonProcess] = ZLayer.scoped {
     for {
       conf <- ZIO.config[Config](Config.config)
       file <- ZIO.attemptBlocking {
@@ -78,29 +78,29 @@ object JsonProcess {
         }
       }
       wcsRef <- Ref.make(WordCountState(Map.empty, Queue.empty[WordEvent]))
-      refFib <- JsonProcess(conf, file, wcsRef).getJsonStream
-    } yield RefWithUpdatingFiber.tupled(refFib)
+    } yield JsonProcess(conf, file, wcsRef)
   }
 }
 final case class JsonProcess private(config: JsonProcess.Config, executable: File, ref: Ref[WordCountState]) {
 
-  def getJsonStream: ZIO[Any, CommandError, (Ref[WordCountState], Fiber[CommandError, Unit])] = {
+  def getJsonStream: ZIO[Any, CommandError, Fiber[CommandError, Unit]] = {
     for {
       p <- Command(executable.getAbsolutePath).run
       f <- processSdtoutStream(p.stdout).fork
-    } yield (ref, f)
+    } yield f
   }
 
   private def getEither(jo: Json.Obj, field: String): Either[String, Json] =
     jo.get(field).toRight(s"No such field '$field'")
 
+  private def recoveringASCII: ZChannel[Any, ZNothing, Chunk[Byte], Any, CharacterCodingException, Chunk[String], Any] =
+    ZPipeline.usASCIIDecode.channel.catchAllCause(_ => recoveringASCII)
   private def unfailingWordsStream(ps: ProcessStream): ZStream[Any, Nothing, Event] =
-    ps.linesStream
-      .orElseFail(())
-      .mapErrorCause(c => c.dieOption.fold(c)(exception => Cause.Fail((), StackTrace.none)))
+    ps.stream
+      .via(ZPipeline.fromChannel(recoveringASCII))
+      .via(ZPipeline.splitLines)
       .either
       .collect { case Right(s) => s } // ignore decoding failures
-      .via(ZPipeline.splitLines)
       .map(_.fromJson[Json.Obj].flatMap { obj: Json.Obj =>
         for {
           jf <- getEither(obj, "event_type")
