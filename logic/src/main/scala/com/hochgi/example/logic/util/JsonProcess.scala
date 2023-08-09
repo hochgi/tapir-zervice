@@ -9,7 +9,6 @@ import zio.{Queue => _, _}
 import zio.process._
 import zio.json._
 import ast._
-import zio.Cause.Die
 import zio.stream._
 
 import java.nio.charset.CharacterCodingException

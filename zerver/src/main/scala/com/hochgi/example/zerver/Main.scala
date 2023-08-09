@@ -2,6 +2,7 @@ package com.hochgi.example.zerver
 
 import com.hochgi.example.zerver.matapi.{CodeImpl, InfoImpl}
 import com.hochgi.example.logic.util.JsonProcess
+import com.hochgi.example.zerver.undoc.Kill
 import com.typesafe.config.{ConfigFactory, Config => TSConfig}
 import sttp.tapir.server.ziohttp.{ZioHttpInterpreter, ZioHttpServerOptions}
 import sttp.tapir.ztapir.ZServerEndpoint
@@ -40,11 +41,9 @@ object Main extends ZIOAppDefault {
       for {
         jsonp      <- ZIO.service[JsonProcess]
         fiber      <- jsonp.getJsonStream
-        app        <- ZIO.serviceWith[List[ZServerEndpoint[Any, Any]]](ZioHttpInterpreter(serverOptions).toHttp(_))
+        app        <- ZIO.serviceWith[List[ZServerEndpoint[Any, Any]]](documentedApis => ZioHttpInterpreter(serverOptions).toHttp(Kill(fiber).endpoint :: documentedApis))
         actualPort <- Server.install(app.withDefaultErrorResponse)
-        _          <- Console.printLine(s"Go to http://localhost:${actualPort}/docs to open SwaggerUI. Press ENTER key to exit.")
-        _          <- Console.readLine
-        _          <- fiber.interrupt
+        _          <- Console.printLine(s"Go to http://localhost:${actualPort}/doc to open SwaggerUI.\nGo to http://localhost:${actualPort}/kill to shutdown")
         _          <- fiber.await
       } yield ()
     ).provide(

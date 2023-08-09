@@ -1,3 +1,10 @@
+## How to build & run
+```sh
+$ sbt zerver/stage
+$ docker build -t tapir-zervice .
+$ docker run -p 9080:9080 tapir-zervice
+```
+
 ## Service structure
 classic diamond structure to allow clients to depend only on contract definition & simple data types,
 without exposing any implementation details from `logic`:
