@@ -1,10 +1,10 @@
 package com.hochgi.example.zerver.matapi
 
 import com.hochgi.example.endpoints.Code.{FooEndpoint, WordCountSlidingWindowEndpoint}
-import com.hochgi.example.logic.util.{Dummy, WordCountState}
+import com.hochgi.example.logic.util.JsonProcess.RefWithUpdatingFiber
+import com.hochgi.example.logic.util.Dummy
 import sttp.tapir.ztapir.ZServerEndpoint
 import zio.{Task, URLayer, ZIO, ZLayer}
-import zio.stm.TRef
 
 trait Code {
 
@@ -13,15 +13,15 @@ trait Code {
 
   def jsonWordCountSlidingWindow: WordCountSlidingWindowEndpoint => ZServerEndpoint[Any, Any]
 }
-case class CodeImpl(tRef: TRef[WordCountState]) extends Code {
+case class CodeImpl(refWithUpdatingFiber: RefWithUpdatingFiber) extends Code {
   override val jsonWordCountSlidingWindow: WordCountSlidingWindowEndpoint => ZServerEndpoint[Any, Any] =
     _.serverLogicSuccess[Task] { _ =>
       for {
-        wc <- tRef.get.commit
+        wc <- refWithUpdatingFiber.ref.get
       } yield wc.grouped
     }
 }
 object CodeImpl {
-  val live: URLayer[TRef[WordCountState], CodeImpl] =
-    ZLayer(ZIO.service[TRef[WordCountState]].map(CodeImpl.apply))
+  val live: URLayer[RefWithUpdatingFiber, CodeImpl] =
+    ZLayer(ZIO.serviceWith[RefWithUpdatingFiber](CodeImpl.apply))
 }

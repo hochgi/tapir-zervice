@@ -2,20 +2,25 @@ package com.hochgi.example.logic.util
 
 import org.apache.commons.io.IOUtils
 
-import java.io.File
+import java.io.{File, IOException}
 import java.nio.file.Files
 import java.util.concurrent.TimeUnit.SECONDS
 import zio.{Queue => _, _}
-import zio.stm.TRef
 import zio.process._
 import zio.json._
 import ast._
 import zio.stream._
+
 import scala.collection.immutable.Queue
 
 object JsonProcess {
 
-  final case class Config(bufferSize: Int, slidingWindow: Duration, updateTick: Duration)
+  final case class ExecutableFile(fileName: String, extension: String)
+
+  final case class Config(bufferSize:    Int,
+                          slidingWindow: Duration,
+                          updateTick:    Duration,
+                          executable:    ExecutableFile)
   object Config {
     lazy val config: zio.Config[Config] = {
 
@@ -31,23 +36,34 @@ object JsonProcess {
         .withDefault(default.slidingWindow) ++
       zio.Config.duration("update-tick")
         .validate(validateDurationMsg)(validateDuration)
-        .withDefault(default.updateTick)
-    }.nested("hochgi", "example", "logic", "json-process").map { case (bufferSize, slidingWindow, updateTick) =>
+        .withDefault(default.updateTick) ++ (
+        zio.Config.string("file-name").withDefault(default.executable.fileName) ++
+        zio.Config.string("extension").withDefault(default.executable.extension)
+      ).nested("executable").map(ExecutableFile.tupled)
+    }.nested("hochgi", "example", "logic", "json-process").map { case (bufferSize, slidingWindow, updateTick, executableFile) =>
       default.copy(
         bufferSize    = bufferSize,
         slidingWindow = slidingWindow,
-        updateTick    = updateTick)
+        updateTick    = updateTick,
+        executable    = executableFile)
     }
 
-    lazy val default: Config = Config(4096, Duration.fromSeconds(20), Duration.fromSeconds(2))
+    lazy val default: Config = Config(
+      4096,
+      Duration.fromSeconds(20),
+      Duration.fromSeconds(2),
+      ExecutableFile("blackbox", "macosx")
+    )
   }
 
-  val live: ZLayer[Any, Throwable, TRef[WordCountState]] = ZLayer.scoped {
+  case class RefWithUpdatingFiber(ref: Ref[WordCountState], fib: Fiber[CommandError, Unit])
+
+  val live: ZLayer[Any, Throwable, RefWithUpdatingFiber] = ZLayer.scoped {
     for {
       conf <- ZIO.config[Config](Config.config)
-      file <- ZIO.attempt {
-        val inputStream = getClass.getResourceAsStream("/blackbox.amd64")
-        val tempPath = Files.createTempFile("blackbox", ".amd64")
+      file <- ZIO.attemptBlocking {
+        val inputStream = getClass.getResourceAsStream(s"/${conf.executable.fileName}.${conf.executable.extension}")
+        val tempPath = Files.createTempFile(conf.executable.fileName, "." + conf.executable.extension)
         val tempFile = tempPath.toFile
         try {
           val outputStream = Files.newOutputStream(tempPath)
@@ -61,27 +77,27 @@ object JsonProcess {
           inputStream.close()
         }
       }
-      qref <- TRef.make(WordCountState(Map.empty, Queue.empty[WordEvent])).commit
-      tref <- JsonProcess(conf, file, qref).getJsonStream
-    } yield tref
+      wcsRef <- Ref.make(WordCountState(Map.empty, Queue.empty[WordEvent]))
+      refFib <- JsonProcess(conf, file, wcsRef).getJsonStream
+    } yield RefWithUpdatingFiber.tupled(refFib)
   }
 }
-final case class JsonProcess private(config: JsonProcess.Config, executable: File, tRef: TRef[WordCountState]) {
+final case class JsonProcess private(config: JsonProcess.Config, executable: File, ref: Ref[WordCountState]) {
 
-  def getJsonStream: ZIO[Any, CommandError, TRef[WordCountState]] = {
+  def getJsonStream: ZIO[Any, CommandError, (Ref[WordCountState], Fiber[CommandError, Unit])] = {
     for {
       p <- Command(executable.getAbsolutePath).run
-      _ <- processSdtoutStream(p.stdout).fork // TODO: allow interrupt fiber for graceful shutdown
-    } yield tRef
+      f <- processSdtoutStream(p.stdout).fork
+    } yield (ref, f)
   }
 
   private def getEither(jo: Json.Obj, field: String): Either[String, Json] =
     jo.get(field).toRight(s"No such field '$field'")
 
   private def unfailingWordsStream(ps: ProcessStream): ZStream[Any, Nothing, Event] =
-    ps.stream
-      .tap(b => Console.printLine(s"byte: $b")) // TODO: for some reason, this tap causes first event to flow in (stops after failure). Removing this will not show even 1st event. ¯\_(ツ)_/¯
-      .via(ZPipeline.fromChannel(ZPipeline.utf8Decode.channel.mapError(CommandError.IOError.apply)))
+    ps.linesStream
+      .orElseFail(())
+      .mapErrorCause(c => c.dieOption.fold(c)(exception => Cause.Fail((), StackTrace.none)))
       .either
       .collect { case Right(s) => s } // ignore decoding failures
       .via(ZPipeline.splitLines)
@@ -105,8 +121,11 @@ final case class JsonProcess private(config: JsonProcess.Config, executable: Fil
     unfailingWordsStream(ps)
       .merge(ticks)
       .runForeach {
-        case we: WordEvent => tRef.update(_.updateNew(we, we.timestamp - config.slidingWindow.toSeconds)).commit
-        case Tick(seconds) => tRef.update(_.dropOld(seconds - config.slidingWindow.toSeconds)).commit
+        case we: WordEvent => ref.update(_.updateNew(we, we.timestamp - config.slidingWindow.toSeconds))
+        case Tick(seconds) => ref.update(_.dropOld(seconds - config.slidingWindow.toSeconds))
+      }
+      .unrefine {
+        case t: IOException => CommandError.IOError(t)
       }
   }
 }

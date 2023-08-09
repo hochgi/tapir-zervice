@@ -22,7 +22,8 @@ object Main extends ZIOAppDefault {
     val tsconfigLive: ULayer[TSConfig] = ZLayer(ZIO.succeed(ConfigFactory.load()))
 
     // given a relevant (as in rooted properly) ts config, supply a ConfigProvider
-    val configProviderLive: URLayer[TSConfig, ConfigProvider] = ZLayer(ZIO.service[TSConfig].map(TypesafeConfigProvider.fromTypesafeConfig(_)))
+    val configProviderLive: URLayer[TSConfig, ConfigProvider with TSConfig] =
+      ZLayer(ZIO.serviceWith[TSConfig](TypesafeConfigProvider.fromTypesafeConfig(_))).passthrough
 
     // set the ConfigProvider
     val setConfigProviderLive: ZLayer[ConfigProvider, Nothing, Unit] =
@@ -37,10 +38,10 @@ object Main extends ZIOAppDefault {
 
     (
       for {
-        app <- ZIO.serviceWith[List[ZServerEndpoint[Any, Any]]](ZioHttpInterpreter(serverOptions).toHttp(_))
+        app        <- ZIO.serviceWith[List[ZServerEndpoint[Any, Any]]](ZioHttpInterpreter(serverOptions).toHttp(_))
         actualPort <- Server.install(app.withDefaultErrorResponse)
-        _ <- Console.printLine(s"Go to http://localhost:${actualPort}/docs to open SwaggerUI. Press ENTER key to exit.")
-        _ <- Console.readLine
+        _          <- Console.printLine(s"Go to http://localhost:${actualPort}/docs to open SwaggerUI. Press ENTER key to exit.")
+        _          <- Console.readLine
       } yield ()
     ).provide(
       Services.tsconfigLive,
@@ -48,7 +49,8 @@ object Main extends ZIOAppDefault {
       Server.configured(),
       InfoImpl.live,
       CodeImpl.live,
-      Routes.live
+      Routes.live,
+      ZLayer.Debug.mermaid
     ).exitCode
   }
 }
